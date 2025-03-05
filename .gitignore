@@ -19,3 +19,6 @@
 # Output files
 secret.json
 secret.yaml
+
+# Release builds and archives
+/releases/
