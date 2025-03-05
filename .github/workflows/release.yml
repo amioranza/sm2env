@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build and Release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: sm2env
+            asset_name: sm2env-${{ github.ref_name }}-x86_64-linux
+          - os: macos-latest
+            artifact_name: sm2env
+            asset_name: sm2env-${{ github.ref_name }}-x86_64-apple-darwin
+          - os: windows-latest
+            artifact_name: sm2env.exe
+            asset_name: sm2env-${{ github.ref_name }}-x86_64-windows
+
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
+          
+      - name: Compress (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/release
+          tar -czf ${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
+          echo "ASSET=${{ matrix.asset_name }}.tar.gz" >> $GITHUB_ENV
+          
+      - name: Compress (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cd target/release
+          7z a ${{ matrix.asset_name }}.zip ${{ matrix.artifact_name }}
+          echo "ASSET=${{ matrix.asset_name }}.zip" >> $env:GITHUB_ENV
+          
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: target/release/${{ env.ASSET }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
