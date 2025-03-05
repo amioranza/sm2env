@@ -8,7 +8,7 @@ use std::fs;
 #[command(
     name = "sm2env",
     about = "A CLI tool to fetch AWS Secrets Manager secrets and save them as .env files.",
-    version = "0.1.0",
+    version = "0.1.1",
     author = "Your Name",
     long_about = "sm2env is a command-line tool that helps retrieve secrets from AWS Secrets Manager \
                   and store them in a .env file for easy environment variable management."
@@ -142,29 +142,56 @@ async fn get_secret(client: &Client, secret_name: &str, output_format: &OutputFo
 }
 
 async fn list_secrets(client: &Client, filter: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
-    let response = client.list_secrets().send().await?;
+    let mut secrets = Vec::new();
+    let mut next_token = None;
     
-    let secrets: Vec<String> = response
-        .secret_list
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|s| s.name)
-        .filter(|name| {
-            if let Some(ref f) = filter {
-                name.contains(f)
-            } else {
-                true
+    // Use pagination to retrieve all secrets
+    loop {
+        let mut request = client.list_secrets();
+        
+        // If we have a next token, use it to get the next page
+        if let Some(token) = next_token {
+            request = request.next_token(token);
+        }
+        
+        let response = request.send().await?;
+        
+        // Process the current page of results
+        if let Some(secret_list) = response.secret_list {
+            for secret in secret_list {
+                if let Some(name) = secret.name {
+                    // Apply filter if provided
+                    if let Some(ref f) = filter {
+                        if name.contains(f) {
+                            secrets.push(name);
+                        }
+                    } else {
+                        secrets.push(name);
+                    }
+                }
             }
-        })
-        .collect();
+        }
+        
+        // Check if there are more pages
+        next_token = response.next_token;
+        
+        // If there's no next token, we've retrieved all secrets
+        if next_token.is_none() {
+            break;
+        }
+    }
+
+    // Sort the secrets alphabetically for better readability
+    secrets.sort();
 
     if secrets.is_empty() {
         println!("No secrets found.");
     } else {
         println!("Available secrets:");
-        for secret in secrets {
+        for secret in &secrets {
             println!("- {}", secret);
         }
+        println!("\nTotal: {} secrets", secrets.len());
     }
     
     Ok(())
