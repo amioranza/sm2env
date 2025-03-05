@@ -8,7 +8,7 @@ use std::fs;
 #[command(
     name = "sm2env",
     about = "A CLI tool to fetch AWS Secrets Manager secrets and save them as .env files.",
-    version = "0.1.1",
+    version = "0.1.2",
     author = "Your Name",
     long_about = "sm2env is a command-line tool that helps retrieve secrets from AWS Secrets Manager \
                   and store them in a .env file for easy environment variable management."
