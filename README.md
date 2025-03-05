@@ -11,6 +11,39 @@ A CLI tool to fetch AWS Secrets Manager secrets and save them as .env files.
 
 ## Installation
 
+### From Releases
+
+You can download pre-built binaries from the [GitHub Releases page](https://github.com/amioranza/sm2env/releases).
+
+#### Linux
+```bash
+# Download the latest release
+curl -L https://github.com/amioranza/sm2env/releases/latest/download/sm2env-v*-x86_64-linux.tar.gz -o sm2env.tar.gz
+
+# Extract the binary
+tar -xzf sm2env.tar.gz
+
+# Move to a directory in your PATH
+sudo mv sm2env /usr/local/bin/
+```
+
+#### macOS
+```bash
+# Download the latest release
+curl -L https://github.com/amioranza/sm2env/releases/latest/download/sm2env-v*-x86_64-apple-darwin.tar.gz -o sm2env.tar.gz
+
+# Extract the binary
+tar -xzf sm2env.tar.gz
+
+# Move to a directory in your PATH
+sudo mv sm2env /usr/local/bin/
+```
+
+#### Windows
+Download the ZIP file from the [Releases page](https://github.com/amioranza/sm2env/releases) and extract it to a location in your PATH.
+
+### From Source
+
 Make sure you have Rust and Cargo installed. Then, you can build the project:
 
 ```bash
