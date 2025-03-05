@@ -11,6 +11,13 @@ A CLI tool to fetch AWS Secrets Manager secrets and save them as .env files.
 
 ## Installation
 
+### Direct Installation (macOS and Linux)
+
+```bash
+# One-line installation
+curl -fsSL https://raw.githubusercontent.com/amioranza/sm2env/main/install.sh | bash
+```
+
 ### Using Homebrew (macOS and Linux)
 
 ```bash
