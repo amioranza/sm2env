@@ -3,12 +3,13 @@ use aws_sdk_secretsmanager::Client;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use std::fmt;
 use std::fs;
+use base64::Engine;
 
 #[derive(Parser)]
 #[command(
     name = "sm2env",
     about = "A CLI tool to fetch AWS Secrets Manager secrets and save them as .env files.",
-    version = "0.1.2",
+    version = "0.1.3",
     author = "Your Name",
     long_about = "sm2env is a command-line tool that helps retrieve secrets from AWS Secrets Manager \
                   and store them in a .env file for easy environment variable management."
@@ -28,6 +29,10 @@ enum Commands {
         /// Specify the output format (stdout, json, env, yaml)
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Env)]
         output: OutputFormat,
+        
+        /// Specify a custom file path to write the output to
+        #[arg(short, long)]
+        file: Option<String>,
     },
     /// List all available secrets
     List {
@@ -71,7 +76,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::Get {
             secret_name,
             output,
-        }) => get_secret(&client, secret_name, output).await?,
+            file,
+        }) => get_secret(&client, secret_name, output, file).await?,
         Some(Commands::List { filter }) => list_secrets(&client, filter.clone()).await?,
         None => {
             // If no arguments are provided, print the help message
@@ -83,61 +89,268 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn get_secret(client: &Client, secret_name: &str, output_format: &OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+async fn get_secret(client: &Client, secret_name: &str, output_format: &OutputFormat, file: &Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let response = client
         .get_secret_value()
         .secret_id(secret_name)
         .send()
         .await?;
     
-    if let Some(secret) = response.secret_string {
-        match serde_json::from_str::<serde_json::Value>(&secret) {
-            Ok(json) => {
-                // Format output based on chosen format
-                match output_format {
-                    OutputFormat::Stdout => {
-                        // Display to stdout in .env format
-                        if let Some(obj) = json.as_object() {
-                            for (key, value) in obj {
-                                println!("{}={}", key, value);
-                            }
-                        } else {
-                            println!("The secret is not a valid JSON object.");
-                        }
-                    }
-                    OutputFormat::Json => {
-                        // Save as JSON file
-                        let json_content = serde_json::to_string_pretty(&json)?;
-                        fs::write("secret.json", json_content)?;
-                        println!("JSON file created successfully!");
-                    }
-                    OutputFormat::Env => {
-                        // Save as .env file
-                        let mut env_content = String::new();
-                        if let Some(obj) = json.as_object() {
-                            for (key, value) in obj {
-                                env_content.push_str(&format!("{}={}\n", key, value));
-                            }
-                            fs::write(".env", env_content)?;
-                            println!(".env file created successfully!");
-                        } else {
-                            println!("The secret is not a valid JSON object.");
-                        }
-                    }
-                    OutputFormat::Yaml => {
-                        // Save as YAML file
-                        let yaml_content = serde_yaml::to_string(&json)?;
-                        fs::write("secret.yaml", yaml_content)?;
-                        println!("YAML file created successfully!");
-                    }
-                }
+    // Handle different secret formats
+    if let Some(secret_string) = response.secret_string {
+        // Process the secret based on its detected format
+        match detect_secret_format(&secret_string) {
+            SecretFormat::Json(json_value) => {
+                process_json_secret(json_value, output_format, file)?;
+            },
+            SecretFormat::PlainText(text) => {
+                process_plain_text_secret(text, output_format, file)?;
             }
-            Err(_) => println!("The secret is not in valid JSON format."),
         }
+    } else if let Some(secret_binary) = response.secret_binary {
+        // Handle binary secrets
+        process_binary_secret(secret_binary, output_format, file)?;
     } else {
-        println!("No secret string found in the response.");
+        println!("No secret content found in the response.");
     }
     
+    Ok(())
+}
+
+/// Detects the format of a secret string
+enum SecretFormat {
+    Json(serde_json::Value),
+    PlainText(String),
+}
+
+fn detect_secret_format(secret: &str) -> SecretFormat {
+    // Try to parse as JSON first
+    match serde_json::from_str::<serde_json::Value>(secret) {
+        Ok(json) => SecretFormat::Json(json),
+        Err(_) => SecretFormat::PlainText(secret.to_string()),
+    }
+}
+
+/// Process JSON formatted secrets
+fn process_json_secret(json: serde_json::Value, output_format: &OutputFormat, file: &Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+    // If file option is provided, write to the file regardless of output format
+    if let Some(file_path) = file {
+        match output_format {
+            OutputFormat::Stdout => {
+                // For stdout with file option, write the raw content to the file
+                let mut content = String::new();
+                if let Some(obj) = json.as_object() {
+                    for (key, value) in obj {
+                        content.push_str(&format!("{}={}\n", key, value));
+                    }
+                    fs::write(file_path, content)?;
+                    println!("Secret written to file: {}", file_path);
+                } else {
+                    // If not an object, write the JSON as is
+                    let content = serde_json::to_string(&json)?;
+                    fs::write(file_path, content)?;
+                    println!("Secret written to file: {}", file_path);
+                }
+            },
+            OutputFormat::Json => {
+                let json_content = serde_json::to_string_pretty(&json)?;
+                fs::write(file_path, json_content)?;
+                println!("JSON file created successfully at {}", file_path);
+            },
+            OutputFormat::Env => {
+                let mut env_content = String::new();
+                if let Some(obj) = json.as_object() {
+                    for (key, value) in obj {
+                        env_content.push_str(&format!("{}={}\n", key, value));
+                    }
+                    fs::write(file_path, env_content)?;
+                    println!(".env file created successfully at {}", file_path);
+                } else {
+                    println!("The secret is not a valid JSON object.");
+                }
+            },
+            OutputFormat::Yaml => {
+                let yaml_content = serde_yaml::to_string(&json)?;
+                fs::write(file_path, yaml_content)?;
+                println!("YAML file created successfully at {}", file_path);
+            },
+        }
+        return Ok(());
+    }
+
+    // Original behavior when no file is specified
+    match output_format {
+        OutputFormat::Stdout => {
+            // Display to stdout in .env format
+            if let Some(obj) = json.as_object() {
+                for (key, value) in obj {
+                    println!("{}={}", key, value);
+                }
+            } else {
+                println!("The secret is not a valid JSON object.");
+            }
+        }
+        OutputFormat::Json => {
+            // Save as JSON file
+            let json_content = serde_json::to_string_pretty(&json)?;
+            fs::write("secret.json", json_content)?;
+            println!("JSON file created successfully!");
+        }
+        OutputFormat::Env => {
+            // Save as .env file
+            let mut env_content = String::new();
+            if let Some(obj) = json.as_object() {
+                for (key, value) in obj {
+                    env_content.push_str(&format!("{}={}\n", key, value));
+                }
+                fs::write(".env", env_content)?;
+                println!(".env file created successfully!");
+            } else {
+                println!("The secret is not a valid JSON object.");
+            }
+        }
+        OutputFormat::Yaml => {
+            // Save as YAML file
+            let yaml_content = serde_yaml::to_string(&json)?;
+            fs::write("secret.yaml", yaml_content)?;
+            println!("YAML file created successfully!");
+        }
+    }
+    Ok(())
+}
+
+/// Process plain text secrets
+fn process_plain_text_secret(text: String, output_format: &OutputFormat, file: &Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+    // If file option is provided, write to the file regardless of output format
+    if let Some(file_path) = file {
+        match output_format {
+            OutputFormat::Stdout => {
+                // For stdout with file option, write the raw content to the file
+                fs::write(file_path, &text)?;
+                println!("Secret written to file: {}", file_path);
+            },
+            OutputFormat::Json => {
+                let json = serde_json::json!({ "value": text });
+                let json_content = serde_json::to_string_pretty(&json)?;
+                fs::write(file_path, json_content)?;
+                println!("JSON file created successfully at {}", file_path);
+            },
+            OutputFormat::Env => {
+                // Try to detect key=value format first
+                if text.contains('=') && !text.contains('\n') {
+                    fs::write(file_path, text)?;
+                } else {
+                    // Use SECRET_VALUE as default key
+                    fs::write(file_path, format!("SECRET_VALUE={}\n", text))?;
+                }
+                println!(".env file created successfully at {}", file_path);
+            },
+            OutputFormat::Yaml => {
+                let yaml_content = serde_yaml::to_string(&serde_json::json!({ "value": text }))?;
+                fs::write(file_path, yaml_content)?;
+                println!("YAML file created successfully at {}", file_path);
+            },
+        }
+        return Ok(());
+    }
+
+    // Original behavior when no file is specified
+    match output_format {
+        OutputFormat::Stdout => {
+            // Display to stdout directly
+            println!("{}", text);
+        }
+        OutputFormat::Json => {
+            // Save as JSON file with a default key
+            let json = serde_json::json!({ "value": text });
+            let json_content = serde_json::to_string_pretty(&json)?;
+            fs::write("secret.json", json_content)?;
+            println!("JSON file created successfully!");
+        }
+        OutputFormat::Env => {
+            // Save as .env file with a default key
+            // Try to detect key=value format first
+            if text.contains('=') && !text.contains('\n') {
+                fs::write(".env", text)?;
+                println!(".env file created successfully!");
+            } else {
+                // Use SECRET_VALUE as default key
+                fs::write(".env", format!("SECRET_VALUE={}\n", text))?;
+                println!(".env file created successfully!");
+            }
+        }
+        OutputFormat::Yaml => {
+            // Save as YAML file with a default key
+            let yaml_content = serde_yaml::to_string(&serde_json::json!({ "value": text }))?;
+            fs::write("secret.yaml", yaml_content)?;
+            println!("YAML file created successfully!");
+        }
+    }
+    Ok(())
+}
+
+/// Process binary secrets
+fn process_binary_secret(binary: aws_sdk_secretsmanager::primitives::Blob, output_format: &OutputFormat, file: &Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+    let binary_data = binary.as_ref();
+    
+    // If file option is provided, write to the file regardless of output format
+    if let Some(file_path) = file {
+        match output_format {
+            OutputFormat::Stdout => {
+                // For binary data with file option, write the raw binary data to the file
+                fs::write(file_path, binary_data)?;
+                println!("Binary secret ({} bytes) written to file: {}", binary_data.len(), file_path);
+            },
+            OutputFormat::Json => {
+                let base64_str = base64::engine::general_purpose::STANDARD.encode(binary_data);
+                let json = serde_json::json!({ "binary_data": base64_str });
+                let json_content = serde_json::to_string_pretty(&json)?;
+                fs::write(file_path, json_content)?;
+                println!("JSON file with base64-encoded binary data created successfully at {}", file_path);
+            },
+            OutputFormat::Env => {
+                let base64_str = base64::engine::general_purpose::STANDARD.encode(binary_data);
+                fs::write(file_path, format!("BINARY_SECRET={}\n", base64_str))?;
+                println!(".env file with base64-encoded binary data created successfully at {}", file_path);
+            },
+            OutputFormat::Yaml => {
+                let base64_str = base64::engine::general_purpose::STANDARD.encode(binary_data);
+                let yaml_content = serde_yaml::to_string(&serde_json::json!({ "binary_data": base64_str }))?;
+                fs::write(file_path, yaml_content)?;
+                println!("YAML file with base64-encoded binary data created successfully at {}", file_path);
+            },
+        }
+        return Ok(());
+    }
+
+    // Original behavior when no file is specified
+    match output_format {
+        OutputFormat::Stdout => {
+            // For binary data, just indicate it's binary and its size
+            println!("Binary secret data ({} bytes)", binary_data.len());
+        }
+        OutputFormat::Json => {
+            // Save binary data as base64 in a JSON file
+            let base64_str = base64::engine::general_purpose::STANDARD.encode(binary_data);
+            let json = serde_json::json!({ "binary_data": base64_str });
+            let json_content = serde_json::to_string_pretty(&json)?;
+            fs::write("secret.json", json_content)?;
+            println!("JSON file with base64-encoded binary data created successfully!");
+        }
+        OutputFormat::Env => {
+            // Save binary data as base64 in .env file
+            let base64_str = base64::engine::general_purpose::STANDARD.encode(binary_data);
+            fs::write(".env", format!("BINARY_SECRET={}\n", base64_str))?;
+            println!(".env file with base64-encoded binary data created successfully!");
+        }
+        OutputFormat::Yaml => {
+            // Save binary data as base64 in a YAML file
+            let base64_str = base64::engine::general_purpose::STANDARD.encode(binary_data);
+            let yaml_content = serde_yaml::to_string(&serde_json::json!({ "binary_data": base64_str }))?;
+            fs::write("secret.yaml", yaml_content)?;
+            println!("YAML file with base64-encoded binary data created successfully!");
+        }
+    }
     Ok(())
 }
 
