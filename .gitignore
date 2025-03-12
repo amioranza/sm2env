@@ -22,6 +22,3 @@ secret.yaml
 
 # Release builds and archives
 /releases/
-
-# windsurf rules
-.windsurfrules
