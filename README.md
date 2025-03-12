@@ -6,6 +6,8 @@ A CLI tool to fetch AWS Secrets Manager secrets and save them as .env files.
 
 - Fetch secrets from AWS Secrets Manager
 - Save secrets in different formats (stdout, JSON, .env, YAML)
+- Write output directly to a specified file with the `--file` option
+- Support for all AWS Secrets Manager formats (JSON, plain text, binary)
 - List available secrets with optional filtering
 - Stdout output uses the same KEY=VALUE format as .env files
 
@@ -106,6 +108,32 @@ sm2env get my-secret-name --output yaml
 # Save as .env file (default)
 sm2env get my-secret-name --output env
 ```
+
+### Write output to a specific file
+
+You can use the `--file` option to write the output directly to a specified file path:
+
+```bash
+# Write to a specific .env file
+sm2env get my-secret-name --output env --file /path/to/my-custom.env
+
+# Write JSON output to a file
+sm2env get my-secret-name --output json --file /path/to/config.json
+
+# Write YAML output to a file
+sm2env get my-secret-name --output yaml --file /path/to/config.yaml
+
+# Write raw content to a file (using stdout format)
+sm2env get my-secret-name --output stdout --file /path/to/output.txt
+```
+
+**Important notes about the `--file` option:**
+
+- The `--file` option works with all output formats (`stdout`, `json`, `env`, `yaml`)
+- When using `--output stdout` with `--file`, the raw content is written to the file without affecting the original format
+- The file extension is not automatically added; you must specify the complete filename
+- If no `--file` option is provided, the tool behaves as before (writes to `.env` file or stdout)
+- The `--file` option takes precedence over the default behavior for each output format
 
 ## AWS Configuration
 
