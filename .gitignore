@@ -22,3 +22,4 @@ secret.yaml
 
 # Release builds and archives
 /releases/
+/release/
