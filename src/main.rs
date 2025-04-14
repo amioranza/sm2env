@@ -9,7 +9,7 @@ use base64::Engine;
 #[command(
     name = "sm2env",
     about = "A CLI tool to fetch AWS Secrets Manager secrets and save them as .env files.",
-    version = "0.1.3",
+    version = "0.1.4",
     author = "Your Name",
     long_about = "sm2env is a command-line tool that helps retrieve secrets from AWS Secrets Manager \
                   and store them in a .env file for easy environment variable management."
@@ -230,10 +230,18 @@ fn process_plain_text_secret(text: String, output_format: &OutputFormat, file: &
                 println!("Secret written to file: {}", file_path);
             },
             OutputFormat::Json => {
-                let json = serde_json::json!({ "value": text });
-                let json_content = serde_json::to_string_pretty(&json)?;
-                fs::write(file_path, json_content)?;
-                println!("JSON file created successfully at {}", file_path);
+                // Check if the text is in env var format (key=value pairs)
+                if text.contains('=') && text.contains('\n') {
+                    // Convert env var format to JSON
+                    let json_content = convert_env_to_json(&text)?;
+                    fs::write(file_path, json_content)?;
+                    println!("JSON file created successfully at {}", file_path);
+                } else {
+                    let json = serde_json::json!({ "value": text });
+                    let json_content = serde_json::to_string_pretty(&json)?;
+                    fs::write(file_path, json_content)?;
+                    println!("JSON file created successfully at {}", file_path);
+                }
             },
             OutputFormat::Env => {
                 // Try to detect key=value format first
@@ -246,9 +254,18 @@ fn process_plain_text_secret(text: String, output_format: &OutputFormat, file: &
                 println!(".env file created successfully at {}", file_path);
             },
             OutputFormat::Yaml => {
-                let yaml_content = serde_yaml::to_string(&serde_json::json!({ "value": text }))?;
-                fs::write(file_path, yaml_content)?;
-                println!("YAML file created successfully at {}", file_path);
+                // Check if the text is in env var format (key=value pairs)
+                if text.contains('=') && text.contains('\n') {
+                    // Convert env var format to YAML
+                    let env_vars = parse_env_vars(&text);
+                    let yaml_content = serde_yaml::to_string(&env_vars)?;
+                    fs::write(file_path, yaml_content)?;
+                    println!("YAML file created successfully at {}", file_path);
+                } else {
+                    let yaml_content = serde_yaml::to_string(&serde_json::json!({ "value": text }))?;
+                    fs::write(file_path, yaml_content)?;
+                    println!("YAML file created successfully at {}", file_path);
+                }
             },
         }
         return Ok(());
@@ -261,11 +278,19 @@ fn process_plain_text_secret(text: String, output_format: &OutputFormat, file: &
             println!("{}", text);
         }
         OutputFormat::Json => {
-            // Save as JSON file with a default key
-            let json = serde_json::json!({ "value": text });
-            let json_content = serde_json::to_string_pretty(&json)?;
-            fs::write("secret.json", json_content)?;
-            println!("JSON file created successfully!");
+            // Check if the text is in env var format (key=value pairs)
+            if text.contains('=') && text.contains('\n') {
+                // Convert env var format to JSON
+                let json_content = convert_env_to_json(&text)?;
+                fs::write("secret.json", json_content)?;
+                println!("JSON file created successfully!");
+            } else {
+                // Save as JSON file with a default key
+                let json = serde_json::json!({ "value": text });
+                let json_content = serde_json::to_string_pretty(&json)?;
+                fs::write("secret.json", json_content)?;
+                println!("JSON file created successfully!");
+            }
         }
         OutputFormat::Env => {
             // Save as .env file with a default key
@@ -280,13 +305,56 @@ fn process_plain_text_secret(text: String, output_format: &OutputFormat, file: &
             }
         }
         OutputFormat::Yaml => {
-            // Save as YAML file with a default key
-            let yaml_content = serde_yaml::to_string(&serde_json::json!({ "value": text }))?;
-            fs::write("secret.yaml", yaml_content)?;
-            println!("YAML file created successfully!");
+            // Check if the text is in env var format (key=value pairs)
+            if text.contains('=') && text.contains('\n') {
+                // Convert env var format to YAML
+                let env_vars = parse_env_vars(&text);
+                let yaml_content = serde_yaml::to_string(&env_vars)?;
+                fs::write("secret.yaml", yaml_content)?;
+                println!("YAML file created successfully!");
+            } else {
+                // Save as YAML file with a default key
+                let yaml_content = serde_yaml::to_string(&serde_json::json!({ "value": text }))?;
+                fs::write("secret.yaml", yaml_content)?;
+                println!("YAML file created successfully!");
+            }
         }
     }
     Ok(())
+}
+
+/// Parse environment variables from text, removing blank and commented lines
+fn parse_env_vars(text: &str) -> serde_json::Map<String, serde_json::Value> {
+    let mut env_vars = serde_json::Map::new();
+    
+    for line in text.lines() {
+        let trimmed = line.trim();
+        
+        // Skip blank lines and commented lines
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        
+        // Split by the first equals sign
+        if let Some(pos) = trimmed.find('=') {
+            let key = trimmed[..pos].trim();
+            let value = trimmed[pos+1..].trim();
+            
+            // Add to our map if key is not empty
+            if !key.is_empty() {
+                env_vars.insert(key.to_string(), serde_json::Value::String(value.to_string()));
+            }
+        }
+    }
+    
+    env_vars
+}
+
+/// Convert environment variables format to JSON
+fn convert_env_to_json(text: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let env_vars = parse_env_vars(text);
+    let json_value = serde_json::Value::Object(env_vars);
+    Ok(serde_json::to_string_pretty(&json_value)?)
 }
 
 /// Process binary secrets
