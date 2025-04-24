@@ -1,6 +1,6 @@
 [package]
 name = "sm2env"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 
 [dependencies]
@@ -12,3 +12,7 @@ serde_yaml = "0.9"
 clap = { version = "4.4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 base64 = "0.21.5"
+csv = "1.3"
+
+[dev-dependencies]
+tempfile = "3.8"
