@@ -10,8 +10,7 @@ if [ "$OS" = "darwin" ]; then
   if [ "$ARCH" = "x86_64" ]; then
     BINARY_URL="https://github.com/amioranza/sm2env/releases/download/v${VERSION}/sm2env-v${VERSION}-x86_64-apple-darwin.tar.gz"
   elif [ "$ARCH" = "arm64" ]; then
-    echo "ARM64 macOS binary not available yet. Using x86_64 binary with Rosetta."
-    BINARY_URL="https://github.com/amioranza/sm2env/releases/download/v${VERSION}/sm2env-v${VERSION}-x86_64-apple-darwin.tar.gz"
+    BINARY_URL="https://github.com/amioranza/sm2env/releases/download/v${VERSION}/sm2env-v${VERSION}-aarch64-apple-darwin.tar.gz"
   else
     echo "Unsupported architecture: $ARCH"
     exit 1
@@ -42,7 +41,7 @@ tar -xzf "$TMP_DIR/sm2env.tar.gz" -C "$TMP_DIR"
 
 # Install the binary
 echo "Installing to /usr/local/bin/sm2env..."
-sudo mv "$TMP_DIR/v${VERSION}/sm2env" /usr/local/bin/
+sudo mv "$TMP_DIR/sm2env" /usr/local/bin/
 sudo chmod +x /usr/local/bin/sm2env
 
 echo "sm2env v${VERSION} has been installed to /usr/local/bin/sm2env"

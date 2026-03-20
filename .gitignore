@@ -23,3 +23,13 @@ secret.yaml
 # Release builds and archives
 /releases/
 /release/
+RELEASE_GUIDE.md
+
+# AI development artifacts
+CLAUDE.md
+PLAN.md
+.claude/
+openspec/
+
+# Release scripts (contain credential paths and infrastructure details)
+/scripts/
